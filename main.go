@@ -30,50 +30,51 @@ type APIResponse struct {
 
 func main() {
 	r := gin.Default()
-	r.GET("/me", getProfile)
+
+	r.GET("/me", func(c *gin.Context) {
+		fact, err := fetchCatFact()
+		timestamp := time.Now().UTC().Format(time.RFC3339Nano)
+
+		// Graceful fallback if external API fails
+		if err != nil {
+			log.Printf("Error fetching cat fact: %v", err)
+			fact = "Cats are fascinating creatures — even when APIs fail."
+		}
+
+		response := APIResponse{
+			Status: "success",
+			User: User{
+				Email: "eifenaike@gmail.com",
+				Name:  "Ifenaike Elias Ayooluwa",
+				Stack: "Go/Gin",
+			},
+			Timestamp: timestamp,
+			Fact:      fact,
+		}
+
+		c.Header("Content-Type", "application/json")
+		c.JSON(http.StatusOK, response)
+	})
+
 	log.Println("Server running on http://localhost:8080")
-	r.Run(":8080")
+	if err := r.Run(":8080"); err != nil {
+		log.Fatalf("Server failed to start: %v", err)
+	}
 }
 
-func getProfile(c *gin.Context) {
-	fact, err := fetchCatFact()
-	timestamp := time.Now().UTC().Format(time.RFC3339Nano)
-
-	if err != nil {
-		log.Printf("Error fetching cat fact: %v", err)
-		c.JSON(http.StatusBadGateway, gin.H{
-			"status":    "error",
-			"message":   "Failed to fetch cat fact from external API",
-			"timestamp": timestamp,
-		})
-		return
-	}
-
-	response := APIResponse{
-		Status: "success",
-		User: User{
-			Email: "eifenaike@gmail.com",
-			Name:  "Ifenaike Elias Ayooluwa",
-			Stack: "Go/Gin",
-		},
-		Timestamp: timestamp,
-		Fact:      fact,
-	}
-
-	c.Header("Content-Type", "application/json")
-	c.JSON(http.StatusOK, response)
-}
-
+// fetchCatFact gets a random cat fact, with timeout and error handling
 func fetchCatFact() (string, error) {
 	client := resty.New().
 		SetTimeout(5 * time.Second).
-		SetRetryCount(1).
-		SetRetryWaitTime(500 * time.Millisecond)
+		SetRetryCount(2).
+		SetRetryWaitTime(1 * time.Second)
 
 	url := "https://catfact.ninja/fact"
 	var factResp CatFactResponse
 
-	resp, err := client.R().SetResult(&factResp).Get(url)
+	resp, err := client.R().
+		SetResult(&factResp).
+		Get(url)
 	if err != nil {
 		return "", fmt.Errorf("network error: %v", err)
 	}
